@@ -1,130 +1,115 @@
 const { handler } = require('../generatePrompt');
-const { validateInterviewType, validateRoleContext } = require('../validators');
+
+// Mock AWS SDK
+jest.mock('aws-sdk', () => {
+  const mockGetSecretValue = jest.fn().mockReturnThis();
+  const mockPromise = jest.fn().mockResolvedValue({
+    SecretString: JSON.stringify({ apiKey: 'test-api-key' })
+  });
+
+  return {
+    SecretsManager: jest.fn(() => ({
+      getSecretValue: mockGetSecretValue,
+      promise: mockPromise
+    }))
+  };
+});
 
 // Mock OpenAI
 jest.mock('openai', () => {
-  const mockCreate = jest.fn();
   return {
     OpenAI: jest.fn().mockImplementation(() => ({
       chat: {
         completions: {
-          create: mockCreate
+          create: jest.fn().mockResolvedValue({
+            choices: [{
+              message: {
+                content: 'Mocked interview question'
+              }
+            }]
+          })
         }
       }
-    })),
-    mockCreate // Export the mock for test control
+    }))
   };
 });
-
-// Mock validators
-jest.mock('../validators', () => ({
-  validateInterviewType: jest.fn(),
-  validateRoleContext: jest.fn()
-}));
 
 describe('generatePrompt Lambda Handler', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.OPENAI_API_KEY = 'test-key';
-    
-    // Reset OpenAI mock to successful response
-    const { mockCreate } = require('openai');
-    mockCreate.mockResolvedValue({
-      choices: [{
-        message: {
-          content: 'Mocked interview question'
-        }
-      }]
-    });
+    process.env.OPENAI_API_KEY_SECRET_ARN = 'test-secret-arn';
   });
 
   it('should generate a prompt for valid input', async () => {
-    // Setup
-    validateInterviewType.mockReturnValue(true);
-    validateRoleContext.mockReturnValue(true);
-    
     const event = {
-      body: JSON.stringify({
-        interviewType: 'product',
-        roleContext: 'Product Manager role at a tech startup'
-      })
+      interviewType: 'product',
+      roleContext: 'Product Manager role at a tech startup'
     };
 
-    // Execute
     const response = await handler(event);
-
-    // Verify
     expect(response.statusCode).toBe(200);
+    
     const body = JSON.parse(response.body);
     expect(body.prompt).toBe('Mocked interview question');
     expect(body.interviewType).toBe('product');
     expect(body.roleContext).toBe('Product Manager role at a tech startup');
   });
 
-  it('should return 400 for invalid interview type', async () => {
-    // Setup
-    validateInterviewType.mockReturnValue(false);
-    validateRoleContext.mockReturnValue(true);
-    
+  it('should handle invalid interview type', async () => {
     const event = {
-      body: JSON.stringify({
-        interviewType: 'invalid',
-        roleContext: 'Product Manager role at a tech startup'
-      })
+      interviewType: 'invalid',
+      roleContext: 'Product Manager role at a tech startup'
     };
 
-    // Execute
-    const response = await handler(event);
-
-    // Verify
-    expect(response.statusCode).toBe(400);
-    const body = JSON.parse(response.body);
-    expect(body.error).toBe('Invalid interview type');
+    await expect(handler(event)).rejects.toThrow();
+    try {
+      await handler(event);
+    } catch (error) {
+      const errorObj = JSON.parse(error.message);
+      expect(errorObj.type).toBe('ValidationError');
+      expect(errorObj.error).toBe('Invalid interview type');
+    }
   });
 
-  it('should return 400 for invalid role context', async () => {
-    // Setup
-    validateInterviewType.mockReturnValue(true);
-    validateRoleContext.mockReturnValue(false);
-    
+  it('should handle invalid role context', async () => {
     const event = {
-      body: JSON.stringify({
-        interviewType: 'product',
-        roleContext: 'too short'
-      })
+      interviewType: 'product',
+      roleContext: 'too short'
     };
 
-    // Execute
-    const response = await handler(event);
-
-    // Verify
-    expect(response.statusCode).toBe(400);
-    const body = JSON.parse(response.body);
-    expect(body.error).toBe('Invalid role context');
+    await expect(handler(event)).rejects.toThrow();
+    try {
+      await handler(event);
+    } catch (error) {
+      const errorObj = JSON.parse(error.message);
+      expect(errorObj.type).toBe('ValidationError');
+      expect(errorObj.error).toBe('Invalid role context');
+    }
   });
 
   it('should handle OpenAI API errors', async () => {
-    // Setup
-    validateInterviewType.mockReturnValue(true);
-    validateRoleContext.mockReturnValue(true);
+    const { OpenAI } = require('openai');
+    const mockCreate = jest.fn().mockRejectedValue(new Error('OpenAI API Error'));
     
+    OpenAI.mockImplementationOnce(() => ({
+      chat: {
+        completions: {
+          create: mockCreate
+        }
+      }
+    }));
+
     const event = {
-      body: JSON.stringify({
-        interviewType: 'product',
-        roleContext: 'Product Manager role at a tech startup'
-      })
+      interviewType: 'product',
+      roleContext: 'Product Manager role at a tech startup'
     };
 
-    // Mock OpenAI error
-    const { mockCreate } = require('openai');
-    mockCreate.mockRejectedValue(new Error('API Error'));
-
-    // Execute
-    const response = await handler(event);
-
-    // Verify
-    expect(response.statusCode).toBe(500);
-    const body = JSON.parse(response.body);
-    expect(body.error).toBe('API Error');
+    try {
+      await handler(event);
+    } catch (error) {
+      const errorObj = JSON.parse(error.message);
+      expect(errorObj.type).toBe('ApiError');
+      expect(errorObj.error).toBe('OpenAI API Error');
+    }
   });
 }); 

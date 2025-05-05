@@ -1,11 +1,9 @@
 const { OpenAI } = require('openai');
 const { validateInterviewType, validateRoleContext } = require('./validators');
+const AWS = require('aws-sdk');
+const secretsManager = new AWS.SecretsManager();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  maxRetries: 3,
-  timeout: 30000,
-});
+let openai;
 
 /**
  * Lambda handler for generating interview prompts
@@ -15,24 +13,35 @@ const openai = new OpenAI({
  */
 exports.handler = async (event, context) => {
   try {
-    // Validate input
-    const { interviewType, roleContext } = JSON.parse(event.body);
-    
+    // Initialize OpenAI client with API key from Secrets Manager
+    if (!openai) {
+      const secretResponse = await secretsManager.getSecretValue({
+        SecretId: process.env.OPENAI_API_KEY_SECRET_ARN
+      }).promise();
+      
+      const apiKey = JSON.parse(secretResponse.SecretString).apiKey;
+      
+      openai = new OpenAI({
+        apiKey: apiKey,
+        maxRetries: 3,
+        timeout: 30000,
+      });
+    }
+
+    // For Step Functions, the input is directly in the event
+    const { interviewType, roleContext } = event;
+
     if (!validateInterviewType(interviewType)) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          error: 'Invalid interview type'
-        })
+      throw {
+        type: 'ValidationError',
+        message: 'Invalid interview type'
       };
     }
     
     if (!validateRoleContext(roleContext)) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          error: 'Invalid role context'
-        })
+      throw {
+        type: 'ValidationError',
+        message: 'Invalid role context'
       };
     }
 
@@ -49,12 +58,19 @@ exports.handler = async (event, context) => {
     };
   } catch (error) {
     console.error('Error generating prompt:', error);
-    return {
-      statusCode: error.statusCode || 500,
-      body: JSON.stringify({
+    
+    // Format error for Step Functions
+    if (error.type === 'ValidationError') {
+      throw new Error(JSON.stringify({
         error: error.message,
-      }),
-    };
+        type: 'ValidationError'
+      }));
+    } else {
+      throw new Error(JSON.stringify({
+        error: error.message || error.toString(),
+        type: 'ApiError'
+      }));
+    }
   }
 };
 
@@ -65,18 +81,22 @@ exports.handler = async (event, context) => {
  * @returns {Promise<string>} Generated prompt
  */
 async function generatePrompt(interviewType, roleContext) {
-  const systemPrompt = `You are an expert interviewer specializing in ${interviewType} interviews. 
-    Generate a relevant interview question based on the following role context: ${roleContext}`;
+  try {
+    const systemPrompt = `You are an expert interviewer specializing in ${interviewType} interviews. 
+      Generate a relevant interview question based on the following role context: ${roleContext}`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: "Generate a relevant interview question." }
-    ],
-    temperature: 0.7,
-    max_tokens: 150,
-  });
+    const response = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: "Generate a relevant interview question." }
+      ],
+      temperature: 0.7,
+      max_tokens: 150,
+    });
 
-  return response.choices[0].message.content;
+    return response.choices[0].message.content;
+  } catch (error) {
+    throw new Error(error.message);
+  }
 } 
