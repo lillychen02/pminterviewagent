@@ -31,48 +31,10 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 # AWS Configuration (optional for local development)
 AWS_PROFILE=dev
-AWS_REGION=us-west-2
+AWS_REGION=us-west-1
 ```
 
 ## Setup Instructions
 
 ### Frontend Setup
-```bash
-cd frontend
-npm install
 ```
-
-### Backend Setup
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### Infrastructure Setup
-```bash
-cd infrastructure
-# For CDK:
-npm install
-cdk synth
-
-# For Terraform:
-terraform init
-terraform plan
-```
-
-## Development
-
-1. Create a new branch from main: `git checkout -b feature/your-feature-name`
-2. Make your changes
-3. Run tests
-4. Submit a pull request
-
-## Environment Variables
-
-Create `.env` files in both frontend and backend directories with appropriate configuration.
-
-## Deployment
-
-Deployment instructions will be added as infrastructure is set up. 

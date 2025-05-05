@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Bootstrap template for CDK toolkit
+Resources:
+  StagingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: cdk-interview-agent-assets-288761743082-us-west-1
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+      LoggingConfiguration:
+        DestinationBucketName: !Ref StagingBucket
+        LogFilePrefix: 'logs/' 

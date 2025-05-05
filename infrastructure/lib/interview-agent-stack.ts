@@ -79,17 +79,14 @@ export class InterviewAgentStack extends cdk.Stack {
       resultPath: '$.error',
     });
 
-    // Define the main flow
-    const definition = sfn.Chain
-      .start(generatePromptTask)
-      .next(processConversationTask);
-
-    // Create the state machine with error handling
+    // Create the state machine
     const stateMachine = new sfn.StateMachine(this, 'InterviewPromptStateMachine', {
-      definition: sfn.Chain
-        .start(generatePromptTask)
-        .next(processConversationTask)
-        .next(new sfn.Succeed(this, 'SuccessState')),
+      definitionBody: sfn.DefinitionBody.fromChainable(
+        sfn.Chain
+          .start(generatePromptTask)
+          .next(processConversationTask)
+          .next(new sfn.Succeed(this, 'SuccessState'))
+      ),
       timeout: cdk.Duration.minutes(5),
     });
 

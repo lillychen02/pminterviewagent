@@ -8,8 +8,8 @@ const app = new cdk.App();
 // Development environment
 new InterviewAgentStack(app, 'InterviewAgentStack-Dev', {
   env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION,
+    account: process.env.CDK_DEFAULT_ACCOUNT || '288761743082',
+    region: process.env.CDK_DEFAULT_REGION || 'us-west-1',
   },
   tags: {
     Environment: 'dev',
@@ -20,8 +20,8 @@ new InterviewAgentStack(app, 'InterviewAgentStack-Dev', {
 // Production environment
 new InterviewAgentStack(app, 'InterviewAgentStack-Prod', {
   env: {
-    account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION,
+    account: process.env.CDK_DEFAULT_ACCOUNT || '288761743082',
+    region: process.env.CDK_DEFAULT_REGION || 'us-west-1',
   },
   tags: {
     Environment: 'prod',
