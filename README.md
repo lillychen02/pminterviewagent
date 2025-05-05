@@ -2,6 +2,8 @@
 
 A full stack application for conducting and analyzing mock PM interviews.
 
+[GitHub Repository](https://github.com/lillychen02/pminterviewagent)
+
 ## Project Structure
 
 ```
