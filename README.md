@@ -1,6 +1,6 @@
 # Interview Agent App
 
-A full-stack application for conducting and managing technical interviews.
+A full stack application for conducting and analyzing mock PM interviews.
 
 ## Project Structure
 
