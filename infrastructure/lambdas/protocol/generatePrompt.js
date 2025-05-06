@@ -29,7 +29,7 @@ exports.handler = async (event, context) => {
     }
 
     // For Step Functions, the input is directly in the event
-    const { interviewType, roleContext } = event;
+    let { interviewType, roleContext } = event;
 
     if (!validateInterviewType(interviewType)) {
       throw {
@@ -38,6 +38,10 @@ exports.handler = async (event, context) => {
       };
     }
     
+    // If roleContext is empty, undefined, or null, use a default
+    if (!roleContext || typeof roleContext !== 'string' || roleContext.trim() === "") {
+      roleContext = "Google Maps";
+    }
     if (!validateRoleContext(roleContext)) {
       throw {
         type: 'ValidationError',

@@ -18,10 +18,14 @@ function validateInterviewType(interviewType) {
  * @returns {boolean} Whether the role context is valid
  */
 function validateRoleContext(roleContext) {
-  if (!roleContext || typeof roleContext !== 'string') {
+  // Allow empty, undefined, or non-string values as valid (to use default)
+  if (roleContext === undefined || roleContext === null || roleContext === "") {
+    return true;
+  }
+  if (typeof roleContext !== 'string') {
     return false;
   }
-  // Ensure role context is not empty and has minimum length
+  // If provided, must be at least 10 characters
   return roleContext.trim().length >= 10;
 }
 
