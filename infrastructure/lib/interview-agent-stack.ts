@@ -4,12 +4,63 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as path from 'path';
 import { Construct } from 'constructs';
 
 export class InterviewAgentStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // Create the Sessions table
+    const sessionsTable = new dynamodb.Table(this, 'SessionsTable', {
+      tableName: `${id}-sessions`,
+      partitionKey: { name: 'sessionId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // Add GSIs for Sessions table
+    sessionsTable.addGlobalSecondaryIndex({
+      indexName: 'userId-index',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    sessionsTable.addGlobalSecondaryIndex({
+      indexName: 'status-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // Create the Scores table
+    const scoresTable = new dynamodb.Table(this, 'ScoresTable', {
+      tableName: `${id}-scores`,
+      partitionKey: { name: 'scoreId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // Add GSIs for Scores table
+    scoresTable.addGlobalSecondaryIndex({
+      indexName: 'sessionId-index',
+      partitionKey: { name: 'sessionId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    scoresTable.addGlobalSecondaryIndex({
+      indexName: 'userId-index',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
 
     // Create secrets for API keys
     const openaiSecret = new secretsmanager.Secret(this, 'OpenAIAPIKey', {
@@ -26,9 +77,12 @@ export class InterviewAgentStack extends cdk.Stack {
     const promptGeneratorLambda = new lambda.Function(this, 'PromptGeneratorLambda', {
       runtime: lambda.Runtime.NODEJS_18_X,
       handler: 'generatePrompt.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../lambdas')),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../dist')),
       environment: {
         OPENAI_API_KEY_SECRET_ARN: openaiSecret.secretArn,
+        SESSIONS_TABLE: sessionsTable.tableName,
+        SCORES_TABLE: scoresTable.tableName,
+        DYNAMODB_ENDPOINT: '',
       },
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -40,6 +94,9 @@ export class InterviewAgentStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambdas')),
       environment: {
         ELEVENLABS_API_KEY_SECRET_ARN: elevenlabsSecret.secretArn,
+        SESSIONS_TABLE: sessionsTable.tableName,
+        SCORES_TABLE: scoresTable.tableName,
+        DYNAMODB_ENDPOINT: '',
       },
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
@@ -48,6 +105,32 @@ export class InterviewAgentStack extends cdk.Stack {
     // Grant Lambda functions permission to read secrets
     openaiSecret.grantRead(promptGeneratorLambda);
     elevenlabsSecret.grantRead(conversationalLambda);
+
+    // Grant Lambda functions permission to access DynamoDB
+    sessionsTable.grantReadWriteData(promptGeneratorLambda);
+    scoresTable.grantReadWriteData(promptGeneratorLambda);
+    sessionsTable.grantReadWriteData(conversationalLambda);
+    scoresTable.grantReadWriteData(conversationalLambda);
+
+    // Create scoring Lambda
+    const scoringLambda = new lambda.Function(this, 'ScoringLambda', {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'protocol/scoring-handler.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambdas')),
+      environment: {
+        OPENAI_API_KEY_SECRET_ARN: openaiSecret.secretArn,
+        SESSIONS_TABLE: sessionsTable.tableName,
+        SCORES_TABLE: scoresTable.tableName,
+        DYNAMODB_ENDPOINT: '',
+      },
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+    });
+
+    // Grant scoring Lambda permission to read OpenAI secret and access DynamoDB
+    openaiSecret.grantRead(scoringLambda);
+    sessionsTable.grantReadWriteData(scoringLambda);
+    scoresTable.grantReadWriteData(scoringLambda);
 
     // Create Lambda tasks for Step Function
     const generatePromptTask = new tasks.LambdaInvoke(this, 'GeneratePromptTask', {
@@ -60,6 +143,13 @@ export class InterviewAgentStack extends cdk.Stack {
       lambdaFunction: conversationalLambda,
       outputPath: '$.Payload',
       resultPath: '$.conversationResult',
+    });
+
+    // Add scoring Lambda to Step Function
+    const scoringTask = new tasks.LambdaInvoke(this, 'ScoringTask', {
+      lambdaFunction: scoringLambda,
+      outputPath: '$.Payload',
+      resultPath: '$.scoringResult',
     });
 
     // Define error handling
@@ -85,6 +175,7 @@ export class InterviewAgentStack extends cdk.Stack {
         sfn.Chain
           .start(generatePromptTask)
           .next(processConversationTask)
+          .next(scoringTask)
           .next(new sfn.Succeed(this, 'SuccessState'))
       ),
       timeout: cdk.Duration.minutes(5),
@@ -94,7 +185,7 @@ export class InterviewAgentStack extends cdk.Stack {
     stateMachine.addToRolePolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: ['lambda:InvokeFunction'],
-      resources: [promptGeneratorLambda.functionArn, conversationalLambda.functionArn],
+      resources: [promptGeneratorLambda.functionArn, conversationalLambda.functionArn, scoringLambda.functionArn],
     }));
 
     // Output the secret ARNs for reference
@@ -123,11 +214,32 @@ export class InterviewAgentStack extends cdk.Stack {
       exportName: `${id}-conversational-lambda-arn`,
     });
 
+    // Output the scoring Lambda ARN
+    new cdk.CfnOutput(this, 'ScoringLambdaARN', {
+      value: scoringLambda.functionArn,
+      description: 'ARN of the Scoring Lambda function',
+      exportName: `${id}-scoring-lambda-arn`,
+    });
+
     // Output the Step Function ARN
     new cdk.CfnOutput(this, 'StateMachineARN', {
       value: stateMachine.stateMachineArn,
       description: 'ARN of the Interview Prompt State Machine',
       exportName: `${id}-state-machine-arn`,
+    });
+
+    // Output the Sessions table name
+    new cdk.CfnOutput(this, 'SessionsTableName', {
+      value: sessionsTable.tableName,
+      description: 'Name of the Sessions DynamoDB table',
+      exportName: `${id}-sessions-table-name`,
+    });
+
+    // Output the Scores table name
+    new cdk.CfnOutput(this, 'ScoresTableName', {
+      value: scoresTable.tableName,
+      description: 'Name of the Scores DynamoDB table',
+      exportName: `${id}-scores-table-name`,
     });
   }
 } 

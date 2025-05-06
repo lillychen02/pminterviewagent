@@ -1,0 +1,14 @@
+{
+  "name": "interview-agent-app",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "infrastructure"
+  ],
+  "scripts": {
+    "test:integration": "cd infrastructure && npm run test:integration",
+    "dynamodb:local:up": "cd infrastructure && npm run dynamodb:local:up",
+    "dynamodb:local:down": "cd infrastructure && npm run dynamodb:local:down",
+    "dynamodb:local:setup": "cd infrastructure && npm run dynamodb:local:setup"
+  }
+} 

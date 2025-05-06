@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      dynamodb-local:
+        image: amazon/dynamodb-local:latest
+        ports:
+          - 8000:8000
+        options: >-
+          --health-cmd "curl -f http://localhost:8000 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: infrastructure/package-lock.json
+
+    - name: Install dependencies
+      run: |
+        cd infrastructure
+        npm ci
+
+    - name: Build
+      run: |
+        cd infrastructure
+        npm run build
+
+    - name: Setup local DynamoDB tables
+      run: |
+        cd infrastructure
+        npm run dynamodb:local:setup
+      env:
+        DYNAMODB_ENDPOINT: http://localhost:8000
+        SESSIONS_TABLE: InterviewAgentStack-Dev-sessions
+        SCORES_TABLE: InterviewAgentStack-Dev-scores
+
+    - name: Run unit tests
+      run: |
+        cd infrastructure
+        npm test
+      env:
+        DYNAMODB_ENDPOINT: http://localhost:8000
+        SESSIONS_TABLE: InterviewAgentStack-Dev-sessions
+        SCORES_TABLE: InterviewAgentStack-Dev-scores
+
+    - name: Run integration tests
+      run: |
+        cd infrastructure
+        npm run test:integration
+      env:
+        DYNAMODB_ENDPOINT: http://localhost:8000
+        SESSIONS_TABLE: InterviewAgentStack-Dev-sessions
+        SCORES_TABLE: InterviewAgentStack-Dev-scores
+
+    - name: Upload test coverage
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: infrastructure/coverage
+        if-no-files-found: error
+
+    - name: Check test coverage
+      run: |
+        cd infrastructure
+        npm run test:coverage
+      env:
+        DYNAMODB_ENDPOINT: http://localhost:8000
+        SESSIONS_TABLE: InterviewAgentStack-Dev-sessions
+        SCORES_TABLE: InterviewAgentStack-Dev-scores 

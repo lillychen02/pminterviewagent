@@ -1,0 +1,14 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "sts:AssumeRole"
+            ],
+            "Resource": [
+                "arn:aws:iam::288761743082:role/cdk-hnb659fds-deploy-role-288761743082-us-west-1"
+            ]
+        }
+    ]
+} 
