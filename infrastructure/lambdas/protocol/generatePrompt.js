@@ -1,7 +1,6 @@
 const { OpenAI } = require('openai');
-const { validateInterviewType, validateRoleContext } = require('./validators');
-const AWS = require('aws-sdk');
-const secretsManager = new AWS.SecretsManager();
+const { validateInterviewType, validateRoleContext } = require('../model/validators');
+const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 
 let openai;
 
@@ -15,12 +14,18 @@ exports.handler = async (event, context) => {
   try {
     // Initialize OpenAI client with API key from Secrets Manager
     if (!openai) {
-      const secretResponse = await secretsManager.getSecretValue({
+      const secretsClient = new SecretsManagerClient({ region: process.env.AWS_REGION });
+      const secretResponse = await secretsClient.send(new GetSecretValueCommand({
         SecretId: process.env.OPENAI_API_KEY_SECRET_ARN
-      }).promise();
-      
-      const apiKey = JSON.parse(secretResponse.SecretString).apiKey;
-      
+      }));
+      let apiKey;
+      try {
+        // Try to parse as JSON and extract apiKey property
+        apiKey = JSON.parse(secretResponse.SecretString).apiKey;
+      } catch (e) {
+        // If parsing fails, treat as raw string
+        apiKey = secretResponse.SecretString;
+      }
       openai = new OpenAI({
         apiKey: apiKey,
         maxRetries: 3,

@@ -1,4 +1,11 @@
-const VALID_INTERVIEW_TYPES = ['product', 'technical', 'behavioral', 'system-design'];
+const VALID_INTERVIEW_TYPES = [
+  'product_sense',
+  'analytical_thinking',
+  'behavioral',
+  'leadership',
+  'system_design',
+  'technical'
+];
 
 /**
  * Validates the interview type
@@ -9,7 +16,9 @@ function validateInterviewType(interviewType) {
   if (!interviewType || typeof interviewType !== 'string') {
     return false;
   }
-  return VALID_INTERVIEW_TYPES.includes(interviewType.toLowerCase());
+  // Normalize input for comparison
+  const normalized = interviewType.trim().toLowerCase();
+  return VALID_INTERVIEW_TYPES.includes(normalized);
 }
 
 /**
